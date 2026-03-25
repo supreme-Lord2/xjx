@@ -162,12 +162,18 @@ module.exports = {
     const botRoot = path.join(__dirname, '..', '..');
 
     try {
-      await extra.reply(
+      // Send initial message and store its key for later editing
+      const initialMsg = await extra.reply(
         `🔄 *Starting clean update…*\n` +
         `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
         `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
         `_Downloading and applying update. Please wait…_`
       );
+
+      // Get the key of the sent message (depends on your framework – adjust if needed)
+      // If extra.reply returns the full message object, you can use its key.
+      // If it returns only the key, use it directly.
+      const msgKey = initialMsg.key || initialMsg; // adjust based on actual return
 
       const copied = await cleanUpdate(ZIP_URL, botRoot);
 
@@ -177,7 +183,8 @@ module.exports = {
         `🔒 Preserved: session, config.js, database, .env\n\n` +
         `_Restarting bot…_`;
 
-      await sock.sendMessage(chatId, { text: summary }, { quoted: msg });
+      // Edit the initial message with the summary
+      await sock.sendMessage(chatId, { text: summary }, { edit: msgKey });
 
       // Restart via pm2 if available, else process.exit for panel auto-restart
       try { await run('pm2 restart all'); return; } catch {}
@@ -185,6 +192,7 @@ module.exports = {
 
     } catch (error) {
       console.error('[UPDATE] Failed:', error);
+      // If editing failed, send a new error message
       await sock.sendMessage(chatId, {
         text: `❌ *Update failed*\n\n${String(error.message || error)}`
       }, { quoted: msg });
