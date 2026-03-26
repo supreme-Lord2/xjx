@@ -137,7 +137,7 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 // ── Command ────────────────────────────────────────────────────────────────
 module.exports = {
     name: 'update',
-    aliases: ['upgrade'],
+    aliases: ['upgrade', 'reboot'],
     category: 'owner',
     description: `Clean-update bot from ${GITHUB_USER}/${GITHUB_REPO} (Owner Only)`,
     usage: '.update',
@@ -202,7 +202,7 @@ module.exports = {
                 ``,
                 `⏰ *Running on* [${platform}] *for:*`,
                 `  *${uptime}*`,
-                ``,
+                `😁🤝`,
                 ``,
                 `📂 _Extracting ZIP…_`
             ].join('\n'));
@@ -212,13 +212,9 @@ module.exports = {
 
             // ── Step 3: Apply ──────────────────────────────────────────────
             await editStatus([
-                `🗂️ *${config.botName} — Applying Update…*`,
+                `_Applying Update…_`,  
                 ``,
-                `⏰ *Running on* [${platform}] *for:*`,
-                `  *${uptime}*`,
-                ``,
-                ``,
-                `🗂️ _Replacing old files…_`
+                `🗂️ Replacing old files...`
             ].join('\n'));
 
             const entries = fs.readdirSync(extractTo);
@@ -236,13 +232,10 @@ module.exports = {
             await editStatus([
                 `✅ *${config.botName} — Update Complete!*`,
                 ``,
-                `⏰ *Ran on* [${platform}] *for:*`,
-                `  *${uptime}*`,
-                ``,
                 `🔹 *Branch:* ${GITHUB_BRANCH}`,
                 `🔹 *Files updated:* ${copied.length}`,
                 ``,
-                `♻️ _Restarting bot…_`
+                ` _Restarting bot instance…_`
             ].join('\n'));
 
             // Restart
