@@ -203,7 +203,6 @@ module.exports = {
                 `⏰ *Running on* [${platform}] *for:*`,
                 `  *${uptime}*`,
                 ``,
-                `📦 *Repo:* ${GITHUB_USER}/${GITHUB_REPO}`,
                 ``,
                 `📂 _Extracting ZIP…_`
             ].join('\n'));
@@ -218,7 +217,6 @@ module.exports = {
                 `⏰ *Running on* [${platform}] *for:*`,
                 `  *${uptime}*`,
                 ``,
-                `📦 *Repo:* ${GITHUB_USER}/${GITHUB_REPO}`,
                 ``,
                 `🗂️ _Replacing old files…_`
             ].join('\n'));
@@ -241,41 +239,11 @@ module.exports = {
                 `⏰ *Ran on* [${platform}] *for:*`,
                 `  *${uptime}*`,
                 ``,
-                `📦 *Repo:* ${GITHUB_USER}/${GITHUB_REPO}`,
-                `🌿 *Branch:* ${GITHUB_BRANCH}`,
-                `📁 *Files updated:* ${copied.length}`,
-                `🔒 *Preserved:* session · config.js · database · .env`,
+                `🔹 *Branch:* ${GITHUB_BRANCH}`,
+                `🔹 *Files updated:* ${copied.length}`,
                 ``,
                 `♻️ _Restarting bot…_`
             ].join('\n'));
-
-            // Send button card with repo link + menu shortcut
-            await sendButtons(sock, chatId, {
-                text: [
-                    `✅ *Update Applied Successfully!*`,
-                    ``,
-                    `📦 *${GITHUB_USER}/${GITHUB_REPO}*`,
-                    `📁 *${copied.length} files* updated`,
-                    `🔒 Your session, config & database are safe`
-                ].join('\n'),
-                footer,
-                buttons: [
-                    {
-                        name: 'cta_url',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '🗂️ View Repo',
-                            url: REPO_URL
-                        })
-                    },
-                    {
-                        name: 'cta_copy',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '📋 Copy Menu Cmd',
-                            copy_code: `${config.prefix}menu`
-                        })
-                    }
-                ]
-            }, { quoted: msg });
 
             // Restart
             try { await run('pm2 restart all'); return; } catch {}
