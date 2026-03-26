@@ -157,9 +157,8 @@ module.exports = {
       // ── Step 1: Download ────────────────────────────────────────────────
       await editStatus(
         `🔄 *Update — Downloading…*\n` +
-        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
         `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
-        `📥 _Downloading latest ZIP from GitHub…_`
+        `📥 _Downloading latest ZIP from GitHub..._`
       );
 
       const tmpDir  = path.join(botRoot, 'tmp');
@@ -171,8 +170,7 @@ module.exports = {
       // ── Step 2: Extract ─────────────────────────────────────────────────
       await editStatus(
         `🔄 *Update — Extracting…*\n` +
-        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
-        `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
+        `📦 Branch: *${GITHUB_BRANCH}*\n\n` +
         `📂 _Extracting ZIP…_`
       );
 
@@ -182,9 +180,8 @@ module.exports = {
       // ── Step 3: Apply ───────────────────────────────────────────────────
       await editStatus(
         `🔄 *Update — Applying…*\n` +
-        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
         `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
-        `🗂️ _Replacing old files…_`
+        `📦 _Replacing old files…_`
       );
 
       const entries = fs.readdirSync(extractTo);
@@ -202,11 +199,9 @@ module.exports = {
       // ── Step 4: Done ────────────────────────────────────────────────────
       await editStatus(
         `✅ *Update Complete!*\n` +
-        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
         `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
         `📁 Files updated: *${copied.length}*\n` +
-        `🔒 Preserved: session · config.js · database · .env\n\n` +
-        `♻️ _Restarting bot…_`
+        `🔚 _Restarting bot..._`
       );
 
       // Restart
