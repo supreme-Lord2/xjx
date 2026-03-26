@@ -137,7 +137,7 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 // ── Command ────────────────────────────────────────────────────────────────
 module.exports = {
     name: 'update',
-    aliases: ['upgrade', 'reboot'],
+    aliases: ['upgrade', 'start'],
     category: 'owner',
     description: `Clean-update bot from ${GITHUB_USER}/${GITHUB_REPO} (Owner Only)`,
     usage: '.update',
