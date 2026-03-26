@@ -116,38 +116,6 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
   }
 }
 
-async function cleanUpdate(zipUrl, botRoot) {
-  const tmpDir  = path.join(botRoot, 'tmp');
-  const zipPath = path.join(tmpDir, 'june_update.zip');
-  const extractTo = path.join(tmpDir, 'june_extract');
-
-  fs.mkdirSync(tmpDir, { recursive: true });
-
-  // 1. Download
-  await downloadFile(zipUrl, zipPath);
-
-  // 2. Extract
-  if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
-  await extractZip(zipPath, extractTo);
-
-  // 3. Find extracted root (GitHub puts files inside <repo>-<branch>/ folder)
-  const entries = fs.readdirSync(extractTo);
-  const inner   = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
-  const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
-
-  // 4. Clean old files (preserve session, node_modules, database, config.js, .env…)
-  cleanDirectory(botRoot);
-
-  // 5. Copy new files in
-  const copied = [];
-  copyRecursive(srcRoot, botRoot, true, copied);
-
-  // 6. Cleanup temp
-  try { fs.rmSync(extractTo,  { recursive: true, force: true }); } catch {}
-  try { fs.rmSync(zipPath,    { force: true }); } catch {}
-
-  return copied;
-}
 
 module.exports = {
   name: 'update',
@@ -158,44 +126,99 @@ module.exports = {
   ownerOnly: true,
 
   async execute(sock, msg, args, extra) {
-    const chatId = msg.key.remoteJid;
+    const chatId  = msg.key.remoteJid;
     const botRoot = path.join(__dirname, '..', '..');
 
+    // Helper: edit the status message in-place
+    let statusKey = null;
+    const editStatus = async (text) => {
+      try {
+        if (statusKey) {
+          await sock.sendMessage(chatId, { edit: statusKey, text });
+        }
+      } catch (_) {}
+    };
+
     try {
-      // Send initial message and store its key for later editing
-      const initialMsg = await extra.reply(
-        `🔄 *Starting clean update…*\n` +
+      // Send the initial status message and capture its key for future edits
+      const sent = await sock.sendMessage(
+        chatId,
+        {
+          text:
+            `🔄 *Update — Starting…*\n` +
+            `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
+            `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
+            `⏳ _Connecting to GitHub…_`
+        },
+        { quoted: msg }
+      );
+      statusKey = sent?.key;
+
+      // ── Step 1: Download ────────────────────────────────────────────────
+      await editStatus(
+        `🔄 *Update — Downloading…*\n` +
         `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
         `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
-        `_Downloading and applying update. Please wait…_`
+        `📥 _Downloading latest ZIP from GitHub…_`
       );
 
-      // Get the key of the sent message (depends on your framework – adjust if needed)
-      // If extra.reply returns the full message object, you can use its key.
-      // If it returns only the key, use it directly.
-      const msgKey = initialMsg.key || initialMsg; // adjust based on actual return
+      const tmpDir  = path.join(botRoot, 'tmp');
+      const zipPath = path.join(tmpDir, 'june_update.zip');
+      const extractTo = path.join(tmpDir, 'june_extract');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      await downloadFile(ZIP_URL, zipPath);
 
-      const copied = await cleanUpdate(ZIP_URL, botRoot);
+      // ── Step 2: Extract ─────────────────────────────────────────────────
+      await editStatus(
+        `🔄 *Update — Extracting…*\n` +
+        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
+        `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
+        `📂 _Extracting ZIP…_`
+      );
 
-      const summary =
-        `✅ *Update complete!*\n` +
+      if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
+      await extractZip(zipPath, extractTo);
+
+      // ── Step 3: Apply ───────────────────────────────────────────────────
+      await editStatus(
+        `🔄 *Update — Applying…*\n` +
+        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
+        `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
+        `🗂️ _Replacing old files…_`
+      );
+
+      const entries = fs.readdirSync(extractTo);
+      const inner   = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
+      const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
+
+      cleanDirectory(botRoot);
+      const copied = [];
+      copyRecursive(srcRoot, botRoot, true, copied);
+
+      // Cleanup temp
+      try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch {}
+      try { fs.rmSync(zipPath,   { force: true }); } catch {}
+
+      // ── Step 4: Done ────────────────────────────────────────────────────
+      await editStatus(
+        `✅ *Update Complete!*\n` +
+        `📦 Repo: *${GITHUB_USER}/${GITHUB_REPO}*\n` +
+        `🌿 Branch: *${GITHUB_BRANCH}*\n\n` +
         `📁 Files updated: *${copied.length}*\n` +
-        `🔒 Preserved: session, config.js, database, .env\n\n` +
-        `_Restarting bot…_`;
+        `🔒 Preserved: session · config.js · database · .env\n\n` +
+        `♻️ _Restarting bot…_`
+      );
 
-      // Edit the initial message with the summary
-      await sock.sendMessage(chatId, { text: summary }, { edit: msgKey });
-
-      // Restart via pm2 if available, else process.exit for panel auto-restart
+      // Restart
       try { await run('pm2 restart all'); return; } catch {}
       setTimeout(() => process.exit(0), 800);
 
     } catch (error) {
       console.error('[UPDATE] Failed:', error);
-      // If editing failed, send a new error message
-      await sock.sendMessage(chatId, {
-        text: `❌ *Update failed*\n\n${String(error.message || error)}`
-      }, { quoted: msg });
+      await editStatus(
+        `❌ *Update Failed*\n\n` +
+        `${String(error.message || error)}`
+      );
     }
   }
 };
