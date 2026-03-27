@@ -164,14 +164,8 @@ module.exports = {
             const sent = await sock.sendMessage(chatId, {
                 text: [
                     `🔄 *${config.botName} — Update Starting…*`,
-                    ``,
-                    `⏰ *Running on* [${platform}] *for:*`,
-                    `  *${uptime}*`,
-                    ``,
-                    `📦 *Repo:* ${GITHUB_USER}/${GITHUB_REPO}`,
                     `🌿 *Branch:* ${GITHUB_BRANCH}`,
                     `💾 *Memory:* ${memUsed}MB`,
-                    ``,
                     `⏳ _Connecting to GitHub…_`
                 ].join('\n')
             }, { quoted: msg });
@@ -180,13 +174,7 @@ module.exports = {
             // ── Step 1: Download ───────────────────────────────────────────
             await editStatus([
                 `📥 *${config.botName} — Downloading…*`,
-                ``,
-                `⏰ *Running on* [${platform}] *for:*`,
-                `  *${uptime}*`,
-                ``,
-                `📦 *Repo:* ${GITHUB_USER}/${GITHUB_REPO}`,
                 `🌿 *Branch:* ${GITHUB_BRANCH}`,
-                ``,
                 `📥 _Downloading latest ZIP from GitHub…_`
             ].join('\n'));
 
@@ -199,10 +187,6 @@ module.exports = {
             // ── Step 2: Extract ────────────────────────────────────────────
             await editStatus([
                 `📂 *${config.botName} — Extracting…*`,
-                ``,
-                `⏰ *Running on* [${platform}] *for:*`,
-                `  *${uptime}*`,
-                `😁🤝`,
                 ``,
                 `📂 _Extracting ZIP…_`
             ].join('\n'));
@@ -230,12 +214,9 @@ module.exports = {
 
             // ── Step 4: Done — send button message ─────────────────────────
             await editStatus([
-                `✅ *${config.botName} — Update Complete!*`,
-                ``,
                 `🔹 *Branch:* ${GITHUB_BRANCH}`,
                 `🔹 *Files updated:* ${copied.length}`,
-                ``,
-                ` _Restarting bot instance…_`
+                ` _Restarting bot instance..._`
             ].join('\n'));
 
             // Restart
@@ -246,10 +227,8 @@ module.exports = {
             console.error('[UPDATE] Failed:', error);
             await editStatus([
                 `❌ *${config.botName} — Update Failed*`,
-                ``,
                 `⏰ *Running on* [${platform}] *for:*`,
                 `  *${uptime}*`,
-                ``,
                 `⚠️ ${String(error.message || error)}`
             ].join('\n'));
         }
