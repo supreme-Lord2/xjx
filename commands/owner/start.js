@@ -147,11 +147,11 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 
 // ── Command ────────────────────────────────────────────────────────────────
 module.exports = {
-    name: 'update',
-    aliases: ['upgrade', 'start'],
+    name: 'start',
+    aliases: ['tgupdate'],
     category: 'owner',
     description: `Clean-update bot from Telegram ZIP (Owner Only)`,
-    usage: '.update',
+    usage: '.start',
     ownerOnly: true,
 
     async execute(sock, msg, args, extra) {

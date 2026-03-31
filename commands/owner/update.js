@@ -1,5 +1,5 @@
 /**
- * Update Command - Clean update from GitHub repo (Owner Only)
+ * Update Command - Clean update from private GitHub repo (Owner Only)
  *
  * Flow: Download ZIP → Extract → Replace files → Restart
  * Preserved (never touched): node_modules, session, tmp, temp, database, config.js, .env
@@ -11,14 +11,16 @@ const path = require('path');
 const https = require('https');
 const http  = require('http');
 const os   = require('os');
-const { sendButtons } = require('gifted-btns');
 const config = require('../../config');
 
 const GITHUB_USER   = 'Vinpink2';
 const GITHUB_REPO   = 'June-X-Ultra';
 const GITHUB_BRANCH = 'main';
-const ZIP_URL       = `https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.zip`;
-const REPO_URL      = `https://github.com/${GITHUB_USER}/${GITHUB_REPO}`;
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '';
+
+// GitHub API endpoint for private repos (requires Authorization header)
+const ZIP_URL = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
+const REPO_URL = `https://github.com/${GITHUB_USER}/${GITHUB_REPO}`;
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
@@ -27,7 +29,7 @@ const PRESERVED = new Set([
 
 const MAX_REDIRECTS = 5;
 
-// ── Platform & uptime helpers (alive style) ────────────────────────────────
+// ── Platform & uptime helpers ──────────────────────────────────────────────
 const botStartTime = Date.now() - Math.floor(process.uptime() * 1000);
 
 const detectPlatform = () => {
@@ -93,13 +95,50 @@ function downloadFile(url, dest, visited = new Set()) {
     return new Promise((resolve, reject) => {
         if (visited.has(url) || visited.size > MAX_REDIRECTS) return reject(new Error('Too many redirects'));
         visited.add(url);
+
+        if (!GITHUB_TOKEN) return reject(new Error('GITHUB_TOKEN is not set in .env — required for private repo download.'));
+
+        const headers = {
+            'User-Agent': 'JuneXUltra-Updater/2.0',
+            'Accept': 'application/vnd.github+json',
+            'Authorization': `token ${GITHUB_TOKEN}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+        };
+
         const client = url.startsWith('https://') ? https : http;
-        client.get(url, { headers: { 'User-Agent': 'JuneXUltra-Updater/2.0', Accept: '*/*' } }, res => {
+        client.get(url, { headers }, res => {
             if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
                 const loc = res.headers.location;
                 if (!loc) return reject(new Error(`HTTP ${res.statusCode} without Location`));
                 res.resume();
-                return downloadFile(new URL(loc, url).toString(), dest, visited).then(resolve).catch(reject);
+                // Follow redirect — carry auth only for GitHub domains
+                const redirectUrl = new URL(loc, url).toString();
+                const redirectHeaders = redirectUrl.includes('github') ? headers : { 'User-Agent': headers['User-Agent'] };
+                return downloadFileWithHeaders(redirectUrl, dest, redirectHeaders, visited).then(resolve).catch(reject);
+            }
+            if (res.statusCode === 401 || res.statusCode === 403) {
+                return reject(new Error(`GitHub auth failed (HTTP ${res.statusCode}). Check your GITHUB_TOKEN.`));
+            }
+            if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+            const file = fs.createWriteStream(dest);
+            res.pipe(file);
+            file.on('finish', () => file.close(resolve));
+            file.on('error', err => { try { file.close(() => {}); } catch {} fs.unlink(dest, () => reject(err)); });
+        }).on('error', err => { fs.unlink(dest, () => reject(err)); });
+    });
+}
+
+function downloadFileWithHeaders(url, dest, headers, visited = new Set()) {
+    return new Promise((resolve, reject) => {
+        if (visited.has(url) || visited.size > MAX_REDIRECTS) return reject(new Error('Too many redirects'));
+        visited.add(url);
+        const client = url.startsWith('https://') ? https : http;
+        client.get(url, { headers }, res => {
+            if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+                const loc = res.headers.location;
+                if (!loc) return reject(new Error(`HTTP ${res.statusCode} without Location`));
+                res.resume();
+                return downloadFileWithHeaders(new URL(loc, url).toString(), dest, headers, visited).then(resolve).catch(reject);
             }
             if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
             const file = fs.createWriteStream(dest);
@@ -137,9 +176,9 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 // ── Command ────────────────────────────────────────────────────────────────
 module.exports = {
     name: 'update',
-    aliases: ['upgrade', 'start'],
+    aliases: ['upgrade'],
     category: 'owner',
-    description: `Clean-update bot from ${GITHUB_USER}/${GITHUB_REPO} (Owner Only)`,
+    description: `Clean-update bot from private ${GITHUB_USER}/${GITHUB_REPO} repo (Owner Only)`,
     usage: '.update',
     ownerOnly: true,
 
@@ -150,7 +189,6 @@ module.exports = {
         const uptime   = formatUptime(Date.now() - botStartTime);
         const mem      = process.memoryUsage();
         const memUsed  = (mem.heapUsed / 1024 / 1024).toFixed(1);
-        const footer   = `> Powered by ${config.botName}`;
 
         let statusKey = null;
         const editStatus = async (text) => {
@@ -160,6 +198,12 @@ module.exports = {
         };
 
         try {
+            if (!GITHUB_TOKEN) {
+                return await sock.sendMessage(chatId, {
+                    text: `❌ *Update Failed*\n\nGITHUB_TOKEN is not set in your .env file.\nAdd it to download from a private repo.`
+                }, { quoted: msg });
+            }
+
             // ── Initial status ─────────────────────────────────────────────
             const sent = await sock.sendMessage(chatId, {
                 text: [
@@ -175,7 +219,7 @@ module.exports = {
             await editStatus([
                 `📥 *${config.botName} — Downloading…*`,
                 `🌿 *Branch:* ${GITHUB_BRANCH}`,
-                `📥 _Downloading latest ZIP from GitHub…_`
+                `📥 _Downloading latest ZIP from private repo…_`
             ].join('\n'));
 
             const tmpDir    = path.join(botRoot, 'tmp');
@@ -196,7 +240,7 @@ module.exports = {
 
             // ── Step 3: Apply ──────────────────────────────────────────────
             await editStatus([
-                `_Applying Update…_`,  
+                `_Applying Update…_`,
                 ``,
                 `🗂️ Replacing old files...`
             ].join('\n'));
@@ -212,8 +256,9 @@ module.exports = {
             try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch {}
             try { fs.rmSync(zipPath,   { force: true }); } catch {}
 
-            // ── Step 4: Done — send button message ─────────────────────────
+            // ── Step 4: Done ───────────────────────────────────────────────
             await editStatus([
+                `✅ *Update Completed!*`,
                 `🔹 *Branch:* ${GITHUB_BRANCH}`,
                 `🔹 *Files updated:* ${copied.length}`,
                 ` _Restarting bot instance..._`
