@@ -16,7 +16,7 @@ const config = require('../../config');
 const GITHUB_USER   = 'Vinpink2';
 const GITHUB_REPO   = 'June-X-Ultra';
 const GITHUB_BRANCH = 'main';
-const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '';
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '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';
 
 // GitHub API endpoint for private repos (requires Authorization header)
 const ZIP_URL = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
