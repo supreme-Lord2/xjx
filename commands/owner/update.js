@@ -16,7 +16,7 @@ const config = require('../../config');
 const GITHUB_USER   = 'Vinpink2';
 const GITHUB_REPO   = 'June-X-Ultra';
 const GITHUB_BRANCH = 'main';
-const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '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';
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || ''; // DO NOT hardcode token
 
 // GitHub API endpoint for private repos (requires Authorization header)
 const ZIP_URL = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
@@ -72,11 +72,74 @@ function run(cmd) {
     });
 }
 
+// Helper: Try to install unzip using available package manager
+async function installUnzipIfNeeded() {
+    const platform = os.platform();
+
+    // Try to see if unzip is already installed
+    try {
+        await run('command -v unzip');
+        return true; // already installed
+    } catch (_) {}
+
+    console.log('[UPDATE] unzip not found, attempting to install...');
+
+    // Detect package manager based on OS
+    let installCmd = null;
+    if (platform === 'linux') {
+        // Try apt (Debian/Ubuntu), yum (RHEL/CentOS), pacman (Arch), apk (Alpine)
+        const checks = [
+            { cmd: 'apt update && apt install -y unzip', test: 'command -v apt' },
+            { cmd: 'yum install -y unzip', test: 'command -v yum' },
+            { cmd: 'pacman -S --noconfirm unzip', test: 'command -v pacman' },
+            { cmd: 'apk add unzip', test: 'command -v apk' }
+        ];
+        for (const { cmd, test } of checks) {
+            try {
+                await run(test);
+                installCmd = cmd;
+                break;
+            } catch (_) {}
+        }
+    } else if (platform === 'darwin') {
+        // macOS: try brew
+        try {
+            await run('command -v brew');
+            installCmd = 'brew install unzip';
+        } catch (_) {}
+    }
+
+    if (!installCmd) {
+        throw new Error('No unzip tool found and no compatible package manager detected. Please install unzip manually (apt install unzip / yum install unzip / brew install unzip).');
+    }
+
+    // Run installation command (may require sudo; we'll assume the user can run it)
+    try {
+        // Prefix with sudo if needed (only if not running as root and sudo exists)
+        let finalCmd = installCmd;
+        if (process.getuid && process.getuid() !== 0) {
+            try {
+                await run('command -v sudo');
+                finalCmd = `sudo ${installCmd}`;
+            } catch (_) {}
+        }
+        await run(finalCmd);
+        console.log('[UPDATE] unzip installed successfully.');
+        return true;
+    } catch (err) {
+        throw new Error(`Failed to install unzip: ${err.message}. Please install it manually.`);
+    }
+}
+
 async function extractZip(zipPath, outDir) {
+    // First, ensure unzip is available (or try to install it)
+    await installUnzipIfNeeded();
+
     if (process.platform === 'win32') {
         await run(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`);
         return;
     }
+
     for (const [check, cmd] of [
         ['unzip',         `unzip -o "${zipPath}" -d "${outDir}"`],
         ['7z',            `7z x -y "${zipPath}" -o"${outDir}"`],
@@ -88,7 +151,7 @@ async function extractZip(zipPath, outDir) {
             return;
         } catch {}
     }
-    throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one.');
+    throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one manually.');
 }
 
 function downloadFile(url, dest, visited = new Set()) {
@@ -96,14 +159,15 @@ function downloadFile(url, dest, visited = new Set()) {
         if (visited.has(url) || visited.size > MAX_REDIRECTS) return reject(new Error('Too many redirects'));
         visited.add(url);
 
-        if (!GITHUB_TOKEN) return reject(new Error('GITHUB_TOKEN is not set in .env — required for private repo download.'));
-
+        // For public repos we might not need token, but we check if token is provided
         const headers = {
             'User-Agent': 'JuneXUltra-Updater/2.0',
             'Accept': 'application/vnd.github+json',
-            'Authorization': `token ${GITHUB_TOKEN}`,
-            'X-GitHub-Api-Version': '2022-11-28',
         };
+        if (GITHUB_TOKEN) {
+            headers['Authorization'] = `token ${GITHUB_TOKEN}`;
+            headers['X-GitHub-Api-Version'] = '2022-11-28';
+        }
 
         const client = url.startsWith('https://') ? https : http;
         client.get(url, { headers }, res => {
@@ -171,6 +235,7 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
             outList.push(path.relative(dest, d).replace(/\\/g, '/'));
         }
     }
+    return outList;
 }
 
 // ── Command ────────────────────────────────────────────────────────────────
@@ -250,8 +315,7 @@ module.exports = {
             const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
 
             cleanDirectory(botRoot);
-            const copied = [];
-            copyRecursive(srcRoot, botRoot, true, copied);
+            const copied = copyRecursive(srcRoot, botRoot, true, []);
 
             try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch {}
             try { fs.rmSync(zipPath,   { force: true }); } catch {}
