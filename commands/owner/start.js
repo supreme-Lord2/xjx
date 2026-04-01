@@ -68,6 +68,31 @@ function run(cmd) {
 }
 
 async function extractZip(zipPath, outDir) {
+    // Try adm-zip first (pure JS, no external dependencies)
+    try {
+        const AdmZip = require('adm-zip');
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(outDir, true);
+        console.log('[UPDATE] Extracted using adm-zip');
+        return;
+    } catch (err) {
+        console.log('[UPDATE] adm-zip not available, attempting install...', err.message);
+    }
+
+    // Attempt to install adm-zip dynamically
+    try {
+        await run('npm install adm-zip');
+        // After installation, try requiring again
+        const AdmZip = require('adm-zip');
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(outDir, true);
+        console.log('[UPDATE] Extracted using adm-zip after installation');
+        return;
+    } catch (err) {
+        console.log('[UPDATE] Failed to install/use adm-zip:', err.message);
+    }
+
+    // Fallback to system tools
     if (process.platform === 'win32') {
         await run(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`);
         return;
@@ -83,7 +108,7 @@ async function extractZip(zipPath, outDir) {
             return;
         } catch {}
     }
-    throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one.');
+    throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one or ensure adm-zip is available.');
 }
 
 // Fetch the latest ZIP file_id from Telegram getUpdates
