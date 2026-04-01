@@ -14,9 +14,8 @@ const os   = require('os');
 const { sendButtons } = require('gifted-btns');
 const config = require('../../config');
 
-// Telegram ZIP details (same as bootloader)
+// Telegram bot token — file ID is resolved dynamically from getUpdates
 const TG_BOT_TOKEN = "8787247082:AAGdPmC5wCmBJeJtliHgNJfaBylRdmg6TeA";
-const TG_FILE_ID   = "BQACAgQAAxkBAAMGacpdhdBjLl5hKIL7jGefxRDShOIAAhEfAALcKVFS-mXwC6x70AE6BA";
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
@@ -87,37 +86,71 @@ async function extractZip(zipPath, outDir) {
     throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one.');
 }
 
-// Telegram download function
-function downloadTelegramZip(dest, visited = new Set()) {
+// Fetch the latest ZIP file_id from Telegram getUpdates
+function getLatestTelegramFileId() {
     return new Promise((resolve, reject) => {
-        // Step 1: Get file info
-        const infoUrl = `https://api.telegram.org/bot${TG_BOT_TOKEN}/getFile?file_id=${TG_FILE_ID}`;
-        https.get(infoUrl, (res) => {
+        const url = `https://api.telegram.org/bot${TG_BOT_TOKEN}/getUpdates?limit=100`;
+        https.get(url, (res) => {
             let raw = '';
             res.on('data', chunk => raw += chunk);
             res.on('end', () => {
                 try {
                     const json = JSON.parse(raw);
-                    if (!json.ok) throw new Error(`Telegram getFile failed: ${json.description || JSON.stringify(json)}`);
-                    const filePath = json.result.file_path;
-                    const downloadUrl = `https://api.telegram.org/file/bot${TG_BOT_TOKEN}/${filePath}`;
-
-                    // Step 2: Download the file
-                    https.get(downloadUrl, (dlRes) => {
-                        if (dlRes.statusCode !== 200) {
-                            dlRes.resume();
-                            return reject(new Error(`HTTP ${dlRes.statusCode} while downloading`));
-                        }
-                        const file = fs.createWriteStream(dest);
-                        dlRes.pipe(file);
-                        file.on('finish', () => file.close(resolve));
-                        file.on('error', err => { file.close(() => reject(err)); fs.unlink(dest, () => {}); });
-                    }).on('error', reject);
+                    if (!json.ok) throw new Error(`Telegram getUpdates failed: ${json.description || JSON.stringify(json)}`);
+                    // Find all messages with a document (ZIP), pick the most recent
+                    const docs = json.result
+                        .filter(u => u.message && u.message.document)
+                        .sort((a, b) => b.message.date - a.message.date);
+                    if (!docs.length) throw new Error('No document found in recent Telegram updates. Please send the ZIP to the bot first.');
+                    const latest = docs[0].message.document;
+                    console.log(`[START] Using latest Telegram file: ${latest.file_name || 'unknown'} (${latest.file_id.slice(0, 20)}...)`);
+                    resolve(latest.file_id);
                 } catch (err) {
                     reject(err);
                 }
             });
         }).on('error', reject);
+    });
+}
+
+// Download a Telegram file by file_id to dest path
+function downloadTelegramZip(dest) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Step 1: Auto-detect latest file_id from getUpdates
+            const fileId = await getLatestTelegramFileId();
+
+            // Step 2: Get the file path from Telegram
+            const infoUrl = `https://api.telegram.org/bot${TG_BOT_TOKEN}/getFile?file_id=${fileId}`;
+            https.get(infoUrl, (res) => {
+                let raw = '';
+                res.on('data', chunk => raw += chunk);
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(raw);
+                        if (!json.ok) throw new Error(`Telegram getFile failed: ${json.description || JSON.stringify(json)}`);
+                        const filePath = json.result.file_path;
+                        const downloadUrl = `https://api.telegram.org/file/bot${TG_BOT_TOKEN}/${filePath}`;
+
+                        // Step 3: Download the file
+                        https.get(downloadUrl, (dlRes) => {
+                            if (dlRes.statusCode !== 200) {
+                                dlRes.resume();
+                                return reject(new Error(`HTTP ${dlRes.statusCode} while downloading`));
+                            }
+                            const file = fs.createWriteStream(dest);
+                            dlRes.pipe(file);
+                            file.on('finish', () => file.close(resolve));
+                            file.on('error', err => { file.close(() => reject(err)); fs.unlink(dest, () => {}); });
+                        }).on('error', reject);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }).on('error', reject);
+        } catch (err) {
+            reject(err);
+        }
     });
 }
 
