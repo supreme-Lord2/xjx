@@ -206,7 +206,7 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 // ── Command ────────────────────────────────────────────────────────────────
 module.exports = {
     name: 'start',
-    aliases: ['tgupdate'],
+    aliases: ['update'],
     category: 'owner',
     description: `Clean-update bot from Telegram ZIP (Owner Only)`,
     usage: '.start',
