@@ -12,7 +12,7 @@ const https = require('https');
 const http  = require('http');
 const os   = require('os');
 const { sendButtons } = require('gifted-btns');
-const config = require('../../config');
+const config = require(require('path').join(global.__ROOT__, 'config'));
 
 // Telegram bot token — file ID is resolved dynamically from getUpdates
 const TG_BOT_TOKEN = "8787247082:AAGdPmC5wCmBJeJtliHgNJfaBylRdmg6TeA";
