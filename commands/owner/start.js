@@ -1,32 +1,29 @@
 /**
- * Update Command - Clean update from remote ZIP (Owner Only)
+ * Update Command - Clean update from Private GitHub Repo (Owner Only)
  *
- * Flow: Download ZIP → Extract → Replace files → Restart
- * Preserved (never touched): node_modules, session, tmp, temp, database, config.js, .env
+ * Flow: Download ZIP from GitHub → Extract → Replace files → Restart
+ * Preserved: node_modules, session, tmp, temp, database, config.js, .env, .env.local
  */
 
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const http = require('http');
 const os = require('os');
 const axios = require('axios');
-const { sendButtons } = require('gifted-btns');
 const config = require('../../config');
 
-// Vercel Relay configuration
-const VERCELRELAYURL = process.env.VERCELRELAYURL || 'https://vercel-repo-sandy.vercel.app/api/repo';
-const ACCESSKEY = process.env.ACCESSKEY || 'supreme_2026';
+// GitHub configuration (private repo)
+const GITHUB_REPO = process.env.GITHUB_REPO || 'dot-666/June-X-Ultra';
+const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+// Your GitHub Personal Access Token (with repo scope)
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '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';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
     'database', 'config.js', '.env', '.env.local',
 ]);
 
-const MAX_REDIRECTS = 5;
-
-// ── Platform & uptime helpers (alive style) ────────────────────────────────
+// ── Platform & uptime helpers ────────────────────────────────────────────────
 const botStartTime = Date.now() - Math.floor(process.uptime() * 1000);
 
 const detectPlatform = () => {
@@ -106,19 +103,24 @@ async function extractZip(zipPath, outDir) {
             return;
         } catch { }
     }
-    throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one or ensure adm-zip is available.');
+    throw new Error('No unzip tool found. Please install unzip/7z or ensure adm-zip is available.');
 }
 
-async function downloadVercelZip(dest) {
+async function downloadGitHubZip(dest) {
+    const url = `https://api.github.com/repos/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
     console.log('[UPDATE] Downloading update...');
-    const response = await axios.get(VERCELRELAYURL, {
+
+    const response = await axios.get(url, {
         responseType: 'arraybuffer',
         headers: {
-            'x-access-key': ACCESSKEY,
-            'User-Agent': 'supreme_secure_ultra'
+            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'supreme-bot-updater'
         },
-        timeout: 20000
+        maxRedirects: 5,
+        timeout: 30000
     });
+
     fs.writeFileSync(dest, Buffer.from(response.data));
     console.log('[UPDATE] Download completed');
 }
@@ -152,7 +154,7 @@ module.exports = {
     name: 'start',
     aliases: ['update'],
     category: 'owner',
-    description: `Clean-update bot from remote ZIP (Owner Only)`,
+    description: `Clean-update bot from remote repository (Owner Only)`,
     usage: '.start',
     ownerOnly: true,
 
@@ -172,7 +174,6 @@ module.exports = {
         };
 
         try {
-            // ── Initial status ─────────────────────────────────────────────
             const sent = await sock.sendMessage(chatId, {
                 text: [
                     `🔄 *${config.botName} — Update Starting…*`,
@@ -182,7 +183,6 @@ module.exports = {
             }, { quoted: msg });
             statusKey = sent?.key;
 
-            // ── Step 1: Download ─────────────────────────────────────────
             await editStatus([
                 `📥 *${config.botName} — Downloading…*`,
                 `📥 _Fetching update…_`
@@ -193,9 +193,8 @@ module.exports = {
             const extractTo = path.join(tmpDir, 'extract');
             fs.mkdirSync(tmpDir, { recursive: true });
 
-            await downloadVercelZip(zipPath);
+            await downloadGitHubZip(zipPath);
 
-            // ── Step 2: Extract ────────────────────────────────────────────
             await editStatus([
                 `📂 *${config.botName} — Extracting…*`,
                 `📂 _Processing update…_`
@@ -204,7 +203,6 @@ module.exports = {
             if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
             await extractZip(zipPath, extractTo);
 
-            // ── Step 3: Apply ──────────────────────────────────────────────
             await editStatus([
                 `🗂️ *Applying update…*`,
                 `🗂️ _Replacing files…_`
@@ -221,7 +219,6 @@ module.exports = {
             try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch { }
             try { fs.rmSync(zipPath, { force: true }); } catch { }
 
-            // ── Step 4: Done — restart ─────────────────────────────────────
             await editStatus([
                 `✅ *Update completed!*`,
                 `🔹 *Files updated:* ${copied.length}`,
