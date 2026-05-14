@@ -1,21 +1,23 @@
 /**
- * Update Command - Clean update from Telegram ZIP (Owner Only)
+ * Update Command - Clean update from remote ZIP (Owner Only)
  *
- * Flow: Download ZIP from Telegram → Extract → Replace files → Restart
+ * Flow: Download ZIP → Extract → Replace files → Restart
  * Preserved (never touched): node_modules, session, tmp, temp, database, config.js, .env
  */
 
 const { exec } = require('child_process');
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const http  = require('http');
-const os   = require('os');
+const http = require('http');
+const os = require('os');
+const axios = require('axios');
 const { sendButtons } = require('gifted-btns');
 const config = require('../../config');
 
-// Telegram bot token — file ID is resolved dynamically from getUpdates
-const TG_BOT_TOKEN = "8787247082:AAGdPmC5wCmBJeJtliHgNJfaBylRdmg6TeA";
+// Vercel Relay configuration
+const VERCELRELAYURL = process.env.VERCELRELAYURL || 'https://vercel-repo-sandy.vercel.app/api/repo';
+const ACCESSKEY = process.env.ACCESSKEY || 'supreme_2026';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
@@ -45,13 +47,13 @@ const detectPlatform = () => {
 
 const formatUptime = (ms) => {
     const seconds = Math.floor(ms / 1000);
-    const days    = Math.floor(seconds / 86400);
-    const hours   = Math.floor((seconds % 86400) / 3600);
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs    = seconds % 60;
-    const parts   = [];
-    if (days > 0)    parts.push(`${days} day${days > 1 ? 's' : ''}`);
-    if (hours > 0)   parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
+    const secs = seconds % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+    if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
     if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
     if (secs > 0 || parts.length === 0) parts.push(`${secs} second${secs !== 1 ? 's' : ''}`);
     return parts.join(', ');
@@ -68,7 +70,6 @@ function run(cmd) {
 }
 
 async function extractZip(zipPath, outDir) {
-    // Try adm-zip first (pure JS, no external dependencies)
     try {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(zipPath);
@@ -79,10 +80,8 @@ async function extractZip(zipPath, outDir) {
         console.log('[UPDATE] adm-zip not available, attempting install...', err.message);
     }
 
-    // Attempt to install adm-zip dynamically
     try {
         await run('npm install adm-zip');
-        // After installation, try requiring again
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(zipPath);
         zip.extractAllTo(outDir, true);
@@ -92,91 +91,36 @@ async function extractZip(zipPath, outDir) {
         console.log('[UPDATE] Failed to install/use adm-zip:', err.message);
     }
 
-    // Fallback to system tools
     if (process.platform === 'win32') {
         await run(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`);
         return;
     }
     for (const [check, cmd] of [
-        ['unzip',         `unzip -o "${zipPath}" -d "${outDir}"`],
-        ['7z',            `7z x -y "${zipPath}" -o"${outDir}"`],
+        ['unzip', `unzip -o "${zipPath}" -d "${outDir}"`],
+        ['7z', `7z x -y "${zipPath}" -o"${outDir}"`],
         ['busybox unzip', `busybox unzip -o "${zipPath}" -d "${outDir}"`],
     ]) {
         try {
             await run(`command -v ${check.split(' ')[0]}`);
             await run(cmd);
             return;
-        } catch {}
+        } catch { }
     }
     throw new Error('No unzip tool found (unzip / 7z / busybox). Please install one or ensure adm-zip is available.');
 }
 
-// Fetch the latest ZIP file_id from Telegram getUpdates
-function getLatestTelegramFileId() {
-    return new Promise((resolve, reject) => {
-        const url = `https://api.telegram.org/bot${TG_BOT_TOKEN}/getUpdates?limit=100`;
-        https.get(url, (res) => {
-            let raw = '';
-            res.on('data', chunk => raw += chunk);
-            res.on('end', () => {
-                try {
-                    const json = JSON.parse(raw);
-                    if (!json.ok) throw new Error(`Telegram getUpdates failed: ${json.description || JSON.stringify(json)}`);
-                    // Find all messages with a document (ZIP), pick the most recent
-                    const docs = json.result
-                        .filter(u => u.message && u.message.document)
-                        .sort((a, b) => b.message.date - a.message.date);
-                    if (!docs.length) throw new Error('No document found in recent Telegram updates. Please send the ZIP to the bot first.');
-                    const latest = docs[0].message.document;
-                    console.log(`[START] Using latest Telegram file: ${latest.file_name || 'unknown'} (${latest.file_id.slice(0, 20)}...)`);
-                    resolve(latest.file_id);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        }).on('error', reject);
+async function downloadVercelZip(dest) {
+    console.log('[UPDATE] Downloading update...');
+    const response = await axios.get(VERCELRELAYURL, {
+        responseType: 'arraybuffer',
+        headers: {
+            'x-access-key': ACCESSKEY,
+            'User-Agent': 'supreme_secure_ultra'
+        },
+        timeout: 20000
     });
-}
-
-// Download a Telegram file by file_id to dest path
-function downloadTelegramZip(dest) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            // Step 1: Auto-detect latest file_id from getUpdates
-            const fileId = await getLatestTelegramFileId();
-
-            // Step 2: Get the file path from Telegram
-            const infoUrl = `https://api.telegram.org/bot${TG_BOT_TOKEN}/getFile?file_id=${fileId}`;
-            https.get(infoUrl, (res) => {
-                let raw = '';
-                res.on('data', chunk => raw += chunk);
-                res.on('end', () => {
-                    try {
-                        const json = JSON.parse(raw);
-                        if (!json.ok) throw new Error(`Telegram getFile failed: ${json.description || JSON.stringify(json)}`);
-                        const filePath = json.result.file_path;
-                        const downloadUrl = `https://api.telegram.org/file/bot${TG_BOT_TOKEN}/${filePath}`;
-
-                        // Step 3: Download the file
-                        https.get(downloadUrl, (dlRes) => {
-                            if (dlRes.statusCode !== 200) {
-                                dlRes.resume();
-                                return reject(new Error(`HTTP ${dlRes.statusCode} while downloading`));
-                            }
-                            const file = fs.createWriteStream(dest);
-                            dlRes.pipe(file);
-                            file.on('finish', () => file.close(resolve));
-                            file.on('error', err => { file.close(() => reject(err)); fs.unlink(dest, () => {}); });
-                        }).on('error', reject);
-                    } catch (err) {
-                        reject(err);
-                    }
-                });
-            }).on('error', reject);
-        } catch (err) {
-            reject(err);
-        }
-    });
+    fs.writeFileSync(dest, Buffer.from(response.data));
+    console.log('[UPDATE] Download completed');
 }
 
 function cleanDirectory(dir) {
@@ -208,24 +152,23 @@ module.exports = {
     name: 'start',
     aliases: ['update'],
     category: 'owner',
-    description: `Clean-update bot from Telegram ZIP (Owner Only)`,
+    description: `Clean-update bot from remote ZIP (Owner Only)`,
     usage: '.start',
     ownerOnly: true,
 
     async execute(sock, msg, args, extra) {
-        const chatId  = msg.key.remoteJid;
+        const chatId = msg.key.remoteJid;
         const botRoot = path.join(__dirname, '..', '..');
         const platform = detectPlatform();
-        const uptime   = formatUptime(Date.now() - botStartTime);
-        const mem      = process.memoryUsage();
-        const memUsed  = (mem.heapUsed / 1024 / 1024).toFixed(1);
-        const footer   = `> Powered by ${config.botName}`;
+        const uptime = formatUptime(Date.now() - botStartTime);
+        const mem = process.memoryUsage();
+        const memUsed = (mem.heapUsed / 1024 / 1024).toFixed(1);
 
         let statusKey = null;
         const editStatus = async (text) => {
             try {
                 if (statusKey) await sock.sendMessage(chatId, { edit: statusKey, text });
-            } catch (_) {}
+            } catch (_) { }
         };
 
         try {
@@ -233,32 +176,29 @@ module.exports = {
             const sent = await sock.sendMessage(chatId, {
                 text: [
                     `🔄 *${config.botName} — Update Starting…*`,
-                    `📦 *Source:* Telegram ZIP`,
                     `💾 *Memory:* ${memUsed}MB`,
-                    `⏳ _Connecting to Telegram…_`
+                    `⏳ _Connecting…_`
                 ].join('\n')
             }, { quoted: msg });
             statusKey = sent?.key;
 
-            // ── Step 1: Download from Telegram ─────────────────────────────
+            // ── Step 1: Download ─────────────────────────────────────────
             await editStatus([
                 `📥 *${config.botName} — Downloading…*`,
-                `📦 *Source:* Telegram ZIP`,
-                `📥 _Fetching latest ZIP from Telegram…_`
+                `📥 _Fetching update…_`
             ].join('\n'));
 
-            const tmpDir    = path.join(botRoot, 'tmp');
-            const zipPath   = path.join(tmpDir, 'june_update.zip');
-            const extractTo = path.join(tmpDir, 'june_extract');
+            const tmpDir = path.join(botRoot, 'tmp');
+            const zipPath = path.join(tmpDir, 'update.zip');
+            const extractTo = path.join(tmpDir, 'extract');
             fs.mkdirSync(tmpDir, { recursive: true });
 
-            await downloadTelegramZip(zipPath);
+            await downloadVercelZip(zipPath);
 
             // ── Step 2: Extract ────────────────────────────────────────────
             await editStatus([
                 `📂 *${config.botName} — Extracting…*`,
-                ``,
-                `📂 _Extracting ZIP…_`
+                `📂 _Processing update…_`
             ].join('\n'));
 
             if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
@@ -266,31 +206,29 @@ module.exports = {
 
             // ── Step 3: Apply ──────────────────────────────────────────────
             await editStatus([
-                `_Applying Update…_`,  
-                ``,
-                `🗂️ Replacing old files...`
+                `🗂️ *Applying update…*`,
+                `🗂️ _Replacing files…_`
             ].join('\n'));
 
             const entries = fs.readdirSync(extractTo);
-            const inner   = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
+            const inner = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
             const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
 
             cleanDirectory(botRoot);
             const copied = [];
             copyRecursive(srcRoot, botRoot, true, copied);
 
-            try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch {}
-            try { fs.rmSync(zipPath,   { force: true }); } catch {}
+            try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch { }
+            try { fs.rmSync(zipPath, { force: true }); } catch { }
 
-            // ── Step 4: Done — send button message ─────────────────────────
+            // ── Step 4: Done — restart ─────────────────────────────────────
             await editStatus([
                 `✅ *Update completed!*`,
                 `🔹 *Files updated:* ${copied.length}`,
-                ` _Restarting bot instance..._`
+                `♻️ _Restarting…_`
             ].join('\n'));
 
-            // Restart
-            try { await run('pm2 restart all'); return; } catch {}
+            try { await run('pm2 restart all'); return; } catch { }
             setTimeout(() => process.exit(0), 800);
 
         } catch (error) {
