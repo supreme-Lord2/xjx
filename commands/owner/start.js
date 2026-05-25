@@ -6,57 +6,59 @@
  */
 
 const { exec } = require('child_process');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
-const os = require('os');
-const axios = require('axios');
+const os   = require('os');
+const axios  = require('axios');
 const config = require('../../config');
+const { applyFont } = require('../../utils/fontConverter');
 
 // GitHub configuration (private repo)
-const GITHUB_REPO = process.env.GITHUB_REPO || 'dot-666/June-X-Ultra';
+const GITHUB_REPO   = process.env.GITHUB_REPO   || 'dot-666/June-X-Ultra';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
-// Your GitHub Personal Access Token (with repo scope)
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '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';
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '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';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
     'database', 'config.js', '.env', '.env.local',
 ]);
 
-// ── Platform & uptime helpers ────────────────────────────────────────────────
+// ── Platform & uptime helpers ─────────────────────────────────────────────────
+
 const botStartTime = Date.now() - Math.floor(process.uptime() * 1000);
 
 const detectPlatform = () => {
-    if (process.env.DYNO) return '☁️ Heroku';
-    if (process.env.RENDER) return '⚡ Render';
-    if (process.env.REPLIT_SLUG || process.env.REPL_ID) return '🔵 Replit';
-    if (process.env.PREFIX && process.env.PREFIX.includes('termux')) return '📱 Termux';
-    if (process.env.PORTS && process.env.CYPHERX_HOST_ID) return '🌀 CypherX Platform';
-    if (process.env.P_SERVER_UUID) return '🖥️ Panel';
-    if (process.env.LXC) return '🐦‍⬛ Linux Container (LXC)';
+    if (process.env.DYNO)                                               return '☁️ Heroku';
+    if (process.env.RENDER)                                             return '⚡ Render';
+    if (process.env.REPLIT_SLUG || process.env.REPL_ID)                 return '🔵 Replit';
+    if (process.env.PREFIX && process.env.PREFIX.includes('termux'))    return '📱 Termux';
+    if (process.env.PORTS && process.env.CYPHERX_HOST_ID)               return '🌀 CypherX';
+    if (process.env.P_SERVER_UUID)                                      return '🖥️ Panel';
+    if (process.env.LXC)                                                return '🐦‍⬛ LXC';
     switch (os.platform()) {
-        case 'win32': return '🪟 Windows';
+        case 'win32':  return '🪟 Windows';
         case 'darwin': return '🍎 macOS';
-        case 'linux': return '🐧 Linux';
-        default: return '❓ Unknown';
+        case 'linux':  return '🐧 Linux';
+        default:       return '❓ Unknown';
     }
 };
 
 const formatUptime = (ms) => {
     const seconds = Math.floor(ms / 1000);
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
+    const days    = Math.floor(seconds / 86400);
+    const hours   = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    const parts = [];
-    if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
-    if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
-    if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
-    if (secs > 0 || parts.length === 0) parts.push(`${secs} second${secs !== 1 ? 's' : ''}`);
-    return parts.join(', ');
+    const secs    = seconds % 60;
+    const parts   = [];
+    if (days    > 0) parts.push(`${days}d`);
+    if (hours   > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (secs    > 0 || parts.length === 0) parts.push(`${secs}s`);
+    return parts.join(' ');
 };
 
-// ── Core helpers ───────────────────────────────────────────────────────────
+// ── Core helpers ──────────────────────────────────────────────────────────────
+
 function run(cmd) {
     return new Promise((resolve, reject) => {
         exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
@@ -93,8 +95,8 @@ async function extractZip(zipPath, outDir) {
         return;
     }
     for (const [check, cmd] of [
-        ['unzip', `unzip -o "${zipPath}" -d "${outDir}"`],
-        ['7z', `7z x -y "${zipPath}" -o"${outDir}"`],
+        ['unzip',         `unzip -o "${zipPath}" -d "${outDir}"`],
+        ['7z',            `7z x -y "${zipPath}" -o"${outDir}"`],
         ['busybox unzip', `busybox unzip -o "${zipPath}" -d "${outDir}"`],
     ]) {
         try {
@@ -114,11 +116,11 @@ async function downloadGitHubZip(dest) {
         responseType: 'arraybuffer',
         headers: {
             'Authorization': `token ${GITHUB_TOKEN}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'supreme-bot-updater'
+            'Accept':        'application/vnd.github.v3+json',
+            'User-Agent':    'supreme-bot-updater',
         },
         maxRedirects: 5,
-        timeout: 30000
+        timeout:      30000,
     });
 
     fs.writeFileSync(dest, Buffer.from(response.data));
@@ -128,7 +130,9 @@ async function downloadGitHubZip(dest) {
 function cleanDirectory(dir) {
     for (const entry of fs.readdirSync(dir)) {
         if (PRESERVED.has(entry)) continue;
-        try { fs.rmSync(path.join(dir, entry), { recursive: true, force: true }); } catch (e) {
+        try {
+            fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+        } catch (e) {
             console.warn(`[UPDATE] Could not remove ${entry}: ${e.message}`);
         }
     }
@@ -149,22 +153,23 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
     }
 }
 
-// ── Command ────────────────────────────────────────────────────────────────
+// ── Command ───────────────────────────────────────────────────────────────────
+
 module.exports = {
     name: 'start',
     aliases: ['update'],
     category: 'owner',
-    description: `Clean-update bot from remote repository (Owner Only)`,
+    description: 'Clean-update bot from remote repository (Owner Only)',
     usage: '.start',
     ownerOnly: true,
 
     async execute(sock, msg, args, extra) {
-        const chatId = msg.key.remoteJid;
+        const chatId  = msg.key.remoteJid;
         const botRoot = path.join(__dirname, '..', '..');
         const platform = detectPlatform();
-        const uptime = formatUptime(Date.now() - botStartTime);
-        const mem = process.memoryUsage();
-        const memUsed = (mem.heapUsed / 1024 / 1024).toFixed(1);
+        const uptime   = formatUptime(Date.now() - botStartTime);
+        const mem      = process.memoryUsage();
+        const memUsed  = (mem.heapUsed / 1024 / 1024).toFixed(1);
 
         let statusKey = null;
         const editStatus = async (text) => {
@@ -174,42 +179,57 @@ module.exports = {
         };
 
         try {
+            // ── Initial status message ────────────────────────────────────────
             const sent = await sock.sendMessage(chatId, {
-                text: [
-                    `🔄 *${config.botName} — Update Starting…*`,
-                    `💾 *Memory:* ${memUsed}MB`,
-                    `⏳ _Connecting…_`
-                ].join('\n')
+                text: applyFont(
+                    `┏━━『 UPDATE 』━━\n\n` +
+                    `➥ Bot     ➜ ${config.botName}\n` +
+                    `➥ Memory  ➜ ${memUsed} MB\n` +
+                    `➥ Status  ➜ Connecting...\n\n` +
+                    `┗━━━━━━━━━━━━━━━━`
+                )
             }, { quoted: msg });
             statusKey = sent?.key;
 
-            await editStatus([
-                `📥 *${config.botName} — Downloading…*`,
-                `📥 _Fetching update…_`
-            ].join('\n'));
+            // ── Downloading ───────────────────────────────────────────────────
+            await editStatus(applyFont(
+                `┏━━『 UPDATE 』━━\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Downloading...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `┗━━━━━━━━━━━━━━━━`
+            ));
 
-            const tmpDir = path.join(botRoot, 'tmp');
-            const zipPath = path.join(tmpDir, 'update.zip');
+            const tmpDir    = path.join(botRoot, 'tmp');
+            const zipPath   = path.join(tmpDir, 'update.zip');
             const extractTo = path.join(tmpDir, 'extract');
             fs.mkdirSync(tmpDir, { recursive: true });
 
             await downloadGitHubZip(zipPath);
 
-            await editStatus([
-                `📂 *${config.botName} — Extracting…*`,
-                `📂 _Processing update…_`
-            ].join('\n'));
+            // ── Extracting ────────────────────────────────────────────────────
+            await editStatus(applyFont(
+                `┏━━『 UPDATE 』━━\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Extracting...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `┗━━━━━━━━━━━━━━━━`
+            ));
 
             if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
             await extractZip(zipPath, extractTo);
 
-            await editStatus([
-                `🗂️ *Applying update…*`,
-                `🗂️ _Replacing files…_`
-            ].join('\n'));
+            // ── Applying files ────────────────────────────────────────────────
+            await editStatus(applyFont(
+                `┏━━『 UPDATE 』━━\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Applying files...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `┗━━━━━━━━━━━━━━━━`
+            ));
 
             const entries = fs.readdirSync(extractTo);
-            const inner = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
+            const inner   = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
             const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
 
             cleanDirectory(botRoot);
@@ -217,25 +237,32 @@ module.exports = {
             copyRecursive(srcRoot, botRoot, true, copied);
 
             try { fs.rmSync(extractTo, { recursive: true, force: true }); } catch { }
-            try { fs.rmSync(zipPath, { force: true }); } catch { }
+            try { fs.rmSync(zipPath,   { force: true });                  } catch { }
 
-            await editStatus([
-                `✅ *Update completed!*`,
-                `🔹 *Files updated:* ${copied.length}`,
-                `♻️ _Restarting…_`
-            ].join('\n'));
+            // ── Done ──────────────────────────────────────────────────────────
+            await editStatus(applyFont(
+                `┏━━『 UPDATE COMPLETE 』━━\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Files   ➜ ${copied.length} updated\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n` +
+                `➥ Status  ➜ Restarting...\n\n` +
+                `┗━━━━━━━━━━━━━━━━`
+            ));
 
             try { await run('pm2 restart all'); return; } catch { }
             setTimeout(() => process.exit(0), 800);
 
         } catch (error) {
             console.error('[UPDATE] Failed:', error);
-            await editStatus([
-                `❌ *${config.botName} — Update Failed*`,
-                `⏰ *Running on* [${platform}] *for:*`,
-                `  *${uptime}*`,
-                `⚠️ ${String(error.message || error)}`
-            ].join('\n'));
+
+            await editStatus(applyFont(
+                `┏━━『 UPDATE FAILED 』━━\n\n` +
+                `➥ Bot      ➜ ${config.botName}\n` +
+                `➥ Platform ➜ ${platform}\n` +
+                `➥ Uptime   ➜ ${uptime}\n` +
+                `➥ Reason   ➜ ${String(error.message || error)}\n\n` +
+                `┗━━━━━━━━━━━━━━━━`
+            ));
         }
     }
 };
