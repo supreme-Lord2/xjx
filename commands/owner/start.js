@@ -16,7 +16,7 @@ const { applyFont } = require('../../utils/fontConverter');
 // GitHub configuration (private repo)
 const GITHUB_REPO   = process.env.GITHUB_REPO   || 'dot-666/June-X-Ultra';
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
-const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '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';
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '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';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
