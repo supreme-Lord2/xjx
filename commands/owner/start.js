@@ -1,7 +1,3 @@
-/**
- * Update Command - Clean update from Vercel Relay (Owner Only)
- */
-
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -10,12 +6,13 @@ const axios = require('axios');
 const config = require('../../config');
 const { applyFont } = require('../../utils/fontConverter');
 
-const VERCEL_RELAY_URL = process.env.VERCEL_RELAY_URL || 'https://june-vercel.vercel.app/api/repo';
-const ACCESS_KEY = process.env.ACCESS_KEY || 'j-41-183-184';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'dot-666/June-X-Ultra';
+const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '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';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
-    'database', 'database.js', 'config.js', '.env', '.env.local'
+    'database', 'config.js', '.env', '.env.local',
 ]);
 
 const botStartTime = Date.now() - Math.floor(process.uptime() * 1000);
@@ -62,41 +59,70 @@ function run(cmd) {
 async function extractZip(zipPath, outDir) {
     try {
         const AdmZip = require('adm-zip');
-        new AdmZip(zipPath).extractAllTo(outDir, true);
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(outDir, true);
+        console.log('[UPDATE] Extracted using adm-zip');
         return;
-    } catch {
-        if (process.platform === 'win32') {
-            await run(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`);
-            return;
-        }
-        for (const [check, cmd] of [
-            ['unzip', `unzip -o "${zipPath}" -d "${outDir}"`],
-            ['7z', `7z x -y "${zipPath}" -o"${outDir}"`],
-            ['busybox unzip', `busybox unzip -o "${zipPath}" -d "${outDir}"`]
-        ]) {
-            try {
-                await run(`command -v ${check.split(' ')[0]}`);
-                await run(cmd);
-                return;
-            } catch { }
-        }
-        throw new Error('No unzip tool found');
+    } catch (err) {
+        console.log('[UPDATE] adm-zip not available, attempting install...', err.message);
     }
+
+    try {
+        await run('npm install adm-zip');
+        const AdmZip = require('adm-zip');
+        const zip = new AdmZip(zipPath);
+        zip.extractAllTo(outDir, true);
+        console.log('[UPDATE] Extracted using adm-zip after installation');
+        return;
+    } catch (err) {
+        console.log('[UPDATE] Failed to install/use adm-zip:', err.message);
+    }
+
+    if (process.platform === 'win32') {
+        await run(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${outDir.replace(/\\/g, '/')}' -Force"`);
+        return;
+    }
+    for (const [check, cmd] of [
+        ['unzip', `unzip -o "${zipPath}" -d "${outDir}"`],
+        ['7z', `7z x -y "${zipPath}" -o"${outDir}"`],
+        ['busybox unzip', `busybox unzip -o "${zipPath}" -d "${outDir}"`],
+    ]) {
+        try {
+            await run(`command -v ${check.split(' ')[0]}`);
+            await run(cmd);
+            return;
+        } catch { }
+    }
+    throw new Error('No unzip tool found. Please install unzip/7z or ensure adm-zip is available.');
 }
 
-async function downloadVercelZip(dest) {
-    const response = await axios.get(VERCEL_RELAY_URL, {
+async function downloadGitHubZip(dest) {
+    const url = `https://api.github.com/repos/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
+    console.log('[UPDATE] Downloading update...');
+
+    const response = await axios.get(url, {
         responseType: 'arraybuffer',
-        headers: { 'x-access-key': ACCESS_KEY, 'User-Agent': 'supreme-bot-updater' },
-        timeout: 30000
+        headers: {
+            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'supreme-bot-updater',
+        },
+        maxRedirects: 5,
+        timeout: 30000,
     });
+
     fs.writeFileSync(dest, Buffer.from(response.data));
+    console.log('[UPDATE] Download completed');
 }
 
 function cleanDirectory(dir) {
     for (const entry of fs.readdirSync(dir)) {
         if (PRESERVED.has(entry)) continue;
-        try { fs.rmSync(path.join(dir, entry), { recursive: true, force: true }); } catch { }
+        try {
+            fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+        } catch (e) {
+            console.warn(`[UPDATE] Could not remove ${entry}: ${e.message}`);
+        }
     }
 }
 
@@ -116,32 +142,35 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 }
 
 module.exports = {
-    name: 'update',
-    aliases: ['start'],
+    name: 'start',
+    aliases: ['update'],
     category: 'owner',
-    description: 'Clean-update bot from Vercel Relay',
-    usage: '.update',
+    description: 'Clean-update bot from remote repository (Owner Only)',
+    usage: '.start',
     ownerOnly: true,
 
-    async execute(sock, msg) {
+    async execute(sock, msg, args, extra) {
         const chatId = msg.key.remoteJid;
         const botRoot = path.join(__dirname, '..', '..');
         const platform = detectPlatform();
         const uptime = formatUptime(Date.now() - botStartTime);
-        const memUsed = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
+        const mem = process.memoryUsage();
+        const memUsed = (mem.heapUsed / 1024 / 1024).toFixed(1);
 
         let statusKey = null;
         const editStatus = async (text) => {
-            try { if (statusKey) await sock.sendMessage(chatId, { edit: statusKey, text }); } catch { }
+            try {
+                if (statusKey) await sock.sendMessage(chatId, { edit: statusKey, text });
+            } catch (_) { }
         };
 
         try {
             const sent = await sock.sendMessage(chatId, {
                 text: applyFont(
                     `┏━━『 UPDATE 』━━\n\n` +
-                    `➥ Bot ➜ ${config.botName}\n` +
-                    `➥ Memory ➜ ${memUsed} MB\n` +
-                    `➥ Status ➜ Connecting...\n\n` +
+                    `➥ Bot     ➜ ${config.botName}\n` +
+                    `➥ Memory  ➜ ${memUsed} MB\n` +
+                    `➥ Status  ➜ Connecting...\n\n` +
                     `┗━━━━━━━━━━━━━━━━`
                 )
             }, { quoted: msg });
@@ -149,8 +178,9 @@ module.exports = {
 
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
-                `➥ Bot ➜ ${config.botName}\n` +
-                `➥ Status ➜ Downloading...\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Downloading...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
@@ -159,31 +189,30 @@ module.exports = {
             const extractTo = path.join(tmpDir, 'extract');
             fs.mkdirSync(tmpDir, { recursive: true });
 
-            await downloadVercelZip(zipPath);
+            await downloadGitHubZip(zipPath);
 
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
-                `➥ Bot ➜ ${config.botName}\n` +
-                `➥ Status ➜ Extracting...\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Extracting...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
             if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
             await extractZip(zipPath, extractTo);
 
-            const entries = fs.readdirSync(extractTo);
-            let srcRoot = extractTo;
-            if (entries.length === 1) {
-                const inner = path.join(extractTo, entries[0]);
-                if (fs.existsSync(inner) && fs.lstatSync(inner).isDirectory()) srcRoot = inner;
-            }
-
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
-                `➥ Bot ➜ ${config.botName}\n` +
-                `➥ Status ➜ Applying files...\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Status  ➜ Applying files...\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
+
+            const entries = fs.readdirSync(extractTo);
+            const inner = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
+            const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
 
             cleanDirectory(botRoot);
             const copied = [];
@@ -194,9 +223,10 @@ module.exports = {
 
             await editStatus(applyFont(
                 `┏━━『 UPDATE COMPLETE 』━━\n\n` +
-                `➥ Bot ➜ ${config.botName}\n` +
-                `➥ Files ➜ ${copied.length} updated\n` +
-                `➥ Status ➜ Restarting...\n\n` +
+                `➥ Bot     ➜ ${config.botName}\n` +
+                `➥ Files   ➜ ${copied.length} updated\n` +
+                `➥ Branch  ➜ ${GITHUB_BRANCH}\n` +
+                `➥ Status  ➜ Restarting...\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
@@ -204,12 +234,14 @@ module.exports = {
             setTimeout(() => process.exit(0), 800);
 
         } catch (error) {
+            console.error('[UPDATE] Failed:', error);
+
             await editStatus(applyFont(
                 `┏━━『 UPDATE FAILED 』━━\n\n` +
-                `➥ Bot ➜ ${config.botName}\n` +
+                `➥ Bot      ➜ ${config.botName}\n` +
                 `➥ Platform ➜ ${platform}\n` +
-                `➥ Uptime ➜ ${uptime}\n` +
-                `➥ Reason ➜ ${String(error.message || error)}\n\n` +
+                `➥ Uptime   ➜ ${uptime}\n` +
+                `➥ Reason   ➜ ${String(error.message || error)}\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
         }
