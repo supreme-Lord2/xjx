@@ -1,7 +1,7 @@
 /**
- * Update Command - Clean update from Private GitHub Repo (Owner Only)
+ * Update Command - Clean update from Vercel Relay (Owner Only)
  *
- * Flow: Download ZIP from GitHub → Extract → Replace files → Restart
+ * Flow: Download ZIP from Vercel Relay → Extract → Replace files → Restart
  * Preserved: node_modules, session, tmp, temp, database, config.js, .env, .env.local
  */
 
@@ -13,10 +13,9 @@ const axios  = require('axios');
 const config = require('../../config');
 const { applyFont } = require('../../utils/fontConverter');
 
-// GitHub configuration (private repo)
-const GITHUB_REPO   = process.env.GITHUB_REPO   || 'dot-666/June-X-Ultra';
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
-const GITHUB_TOKEN  = process.env.GITHUB_TOKEN  || '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';
+// Vercel Relay configuration
+const VERCEL_RELAY_URL = process.env.VERCEL_RELAY_URL || 'https://june-vercel.vercel.app/api/repo';
+const ACCESS_KEY = process.env.ACCESS_KEY || 'j-41-183-184';
 
 const PRESERVED = new Set([
     'node_modules', '.git', 'session', 'tmp', 'temp',
@@ -108,19 +107,16 @@ async function extractZip(zipPath, outDir) {
     throw new Error('No unzip tool found. Please install unzip/7z or ensure adm-zip is available.');
 }
 
-async function downloadGitHubZip(dest) {
-    const url = `https://api.github.com/repos/${GITHUB_REPO}/zipball/${GITHUB_BRANCH}`;
-    console.log('[UPDATE] Downloading update...');
+async function downloadVercelZip(dest) {
+    console.log('[UPDATE] Downloading update from Vercel Relay...');
 
-    const response = await axios.get(url, {
+    const response = await axios.get(VERCEL_RELAY_URL, {
         responseType: 'arraybuffer',
         headers: {
-            'Authorization': `token ${GITHUB_TOKEN}`,
-            'Accept':        'application/vnd.github.v3+json',
-            'User-Agent':    'supreme-bot-updater',
+            'x-access-key': ACCESS_KEY,
+            'User-Agent': 'supreme-bot-updater',
         },
-        maxRedirects: 5,
-        timeout:      30000,
+        timeout: 30000,
     });
 
     fs.writeFileSync(dest, Buffer.from(response.data));
@@ -156,11 +152,11 @@ function copyRecursive(src, dest, isRoot = false, outList = []) {
 // ── Command ───────────────────────────────────────────────────────────────────
 
 module.exports = {
-    name: 'start',
-    aliases: ['update'],
+    name: 'update',
+    aliases: ['start'],
     category: 'owner',
-    description: 'Clean-update bot from remote repository (Owner Only)',
-    usage: '.start',
+    description: 'Clean-update bot from Vercel Relay (Owner Only)',
+    usage: '.update',
     ownerOnly: true,
 
     async execute(sock, msg, args, extra) {
@@ -185,18 +181,18 @@ module.exports = {
                     `┏━━『 UPDATE 』━━\n\n` +
                     `➥ Bot     ➜ ${config.botName}\n` +
                     `➥ Memory  ➜ ${memUsed} MB\n` +
-                    `➥ Status  ➜ Connecting...\n\n` +
+                    `➥ Status  ➜ Connecting to Vercel Relay...\n\n` +
                     `┗━━━━━━━━━━━━━━━━`
                 )
             }, { quoted: msg });
             statusKey = sent?.key;
 
-            // ── Downloading ───────────────────────────────────────────────────
+            // ── Downloading from Vercel ───────────────────────────────────────
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
                 `➥ Bot     ➜ ${config.botName}\n` +
-                `➥ Status  ➜ Downloading...\n` +
-                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `➥ Status  ➜ Downloading from Vercel...\n` +
+                `➥ Source  ➜ Vercel Relay\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
@@ -205,32 +201,40 @@ module.exports = {
             const extractTo = path.join(tmpDir, 'extract');
             fs.mkdirSync(tmpDir, { recursive: true });
 
-            await downloadGitHubZip(zipPath);
+            await downloadVercelZip(zipPath);
 
             // ── Extracting ────────────────────────────────────────────────────
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
                 `➥ Bot     ➜ ${config.botName}\n` +
                 `➥ Status  ➜ Extracting...\n` +
-                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `➥ Source  ➜ Vercel Relay\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
             if (fs.existsSync(extractTo)) fs.rmSync(extractTo, { recursive: true, force: true });
             await extractZip(zipPath, extractTo);
 
+            // ── Find the actual extracted folder ─────────────────────────────
+            const entries = fs.readdirSync(extractTo);
+            let srcRoot = extractTo;
+            
+            // Check if there's a single folder (GitHub ZIP style)
+            if (entries.length === 1) {
+                const inner = path.join(extractTo, entries[0]);
+                if (fs.existsSync(inner) && fs.lstatSync(inner).isDirectory()) {
+                    srcRoot = inner;
+                }
+            }
+
             // ── Applying files ────────────────────────────────────────────────
             await editStatus(applyFont(
                 `┏━━『 UPDATE 』━━\n\n` +
                 `➥ Bot     ➜ ${config.botName}\n` +
                 `➥ Status  ➜ Applying files...\n` +
-                `➥ Branch  ➜ ${GITHUB_BRANCH}\n\n` +
+                `➥ Source  ➜ Vercel Relay\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
-
-            const entries = fs.readdirSync(extractTo);
-            const inner   = entries.length === 1 ? path.join(extractTo, entries[0]) : extractTo;
-            const srcRoot = fs.existsSync(inner) && fs.lstatSync(inner).isDirectory() ? inner : extractTo;
 
             cleanDirectory(botRoot);
             const copied = [];
@@ -244,12 +248,20 @@ module.exports = {
                 `┏━━『 UPDATE COMPLETE 』━━\n\n` +
                 `➥ Bot     ➜ ${config.botName}\n` +
                 `➥ Files   ➜ ${copied.length} updated\n` +
-                `➥ Branch  ➜ ${GITHUB_BRANCH}\n` +
+                `➥ Source  ➜ Vercel Relay\n` +
                 `➥ Status  ➜ Restarting...\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
 
-            try { await run('pm2 restart all'); return; } catch { }
+            // ── Restart the bot ──────────────────────────────────────────────
+            try { 
+                await run('pm2 restart all'); 
+                console.log('[UPDATE] Bot restarted via pm2');
+                return; 
+            } catch { }
+            
+            // If pm2 fails, exit so the process manager restarts
+            console.log('[UPDATE] Exiting for restart...');
             setTimeout(() => process.exit(0), 800);
 
         } catch (error) {
