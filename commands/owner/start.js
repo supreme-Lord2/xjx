@@ -73,10 +73,9 @@ async function extractZip(zipPath, outDir) {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(zipPath);
         zip.extractAllTo(outDir, true);
-        console.log('[UPDATE] Extracted using adm-zip');
         return;
     } catch (err) {
-        console.log('[UPDATE] adm-zip not available, attempting install...', err.message);
+        // adm-zip not available, attempt install
     }
 
     try {
@@ -84,10 +83,9 @@ async function extractZip(zipPath, outDir) {
         const AdmZip = require('adm-zip');
         const zip = new AdmZip(zipPath);
         zip.extractAllTo(outDir, true);
-        console.log('[UPDATE] Extracted using adm-zip after installation');
         return;
-    } catch (err) {
-        console.log('[UPDATE] Failed to install/use adm-zip:', err.message);
+    } catch {
+        // fallback to system tools
     }
 
     // Fallback to system unzip tools
@@ -114,8 +112,6 @@ async function extractZip(zipPath, outDir) {
  * Uses the same access key as the bootloader.
  */
 async function downloadVercelZip(dest) {
-    console.log('[UPDATE] Downloading update from Vercel relay...');
-
     const response = await axios.get(VERCEL_RELAY_URL, {
         responseType: 'arraybuffer',
         headers: {
@@ -126,7 +122,6 @@ async function downloadVercelZip(dest) {
     });
 
     fs.writeFileSync(dest, Buffer.from(response.data));
-    console.log('[UPDATE] Download completed');
 }
 
 function cleanDirectory(dir) {
@@ -135,7 +130,7 @@ function cleanDirectory(dir) {
         try {
             fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
         } catch (e) {
-            console.warn(`[UPDATE] Could not remove ${entry}: ${e.message}`);
+            // silent fail
         }
     }
 }
@@ -254,14 +249,18 @@ module.exports = {
             setTimeout(() => process.exit(0), 800);
 
         } catch (error) {
-            console.error('[UPDATE] Failed:', error);
+            // Sanitize error message to avoid exposing secrets
+            let sanitizedError = String(error.message || error);
+            // Redact known sensitive values if they appear
+            sanitizedError = sanitizedError.replace(new RegExp(VERCEL_RELAY_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[REDACTED_URL]');
+            sanitizedError = sanitizedError.replace(new RegExp(ACCESS_KEY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[REDACTED_KEY]');
 
             await editStatus(applyFont(
                 `┏━━『 UPDATE FAILED 』━━\n\n` +
                 `➥ Bot      ➜ ${config.botName}\n` +
                 `➥ Platform ➜ ${platform}\n` +
                 `➥ Uptime   ➜ ${uptime}\n` +
-                `➥ Reason   ➜ ${String(error.message || error)}\n\n` +
+                `➥ Reason   ➜ ${sanitizedError}\n\n` +
                 `┗━━━━━━━━━━━━━━━━`
             ));
         }
