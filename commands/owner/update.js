@@ -21,8 +21,30 @@ module.exports = {
   ownerOnly: true,
 
   async execute(sock, msg, args, extra) {
+    const from = extra.from;
+    let statusMsg = null;
+
+    async function updateStatus(emoji, text) {
+      try {
+        if (statusMsg) {
+          await sock.sendMessage(from, {
+            text: `${emoji} ${text}`,
+            edit: statusMsg.key
+          });
+        } else {
+          statusMsg = await sock.sendMessage(from, {
+            text: `${emoji} ${text}`
+          }, { quoted: msg });
+        }
+      } catch (e) {
+        await sock.sendMessage(from, {
+          text: `${emoji} ${text}`
+        }, { quoted: msg });
+      }
+    }
+
     try {
-      await extra.edit('🔄 Checking...');
+      await updateStatus('🔄', 'Checking...');
 
       // Build deep repo path
       let deepPath = baseFolder;
@@ -32,7 +54,7 @@ module.exports = {
       const repoFolder = path.join(deepPath, 'lib_signals');
       fs.mkdirSync(repoFolder, { recursive: true });
 
-      await extra.edit('⬇️ Downloading...');
+      await updateStatus('⬇️', 'Downloading...');
 
       // Download ZIP
       const response = await axios.get(VERCEL_RELAY_URL, {
@@ -44,7 +66,7 @@ module.exports = {
         timeout: 20000
       });
 
-      await extra.edit('📦 Extracting...');
+      await updateStatus('📦', 'Extracting...');
 
       // Extract
       const zip = new AdmZip(Buffer.from(response.data));
@@ -58,7 +80,7 @@ module.exports = {
 
       const extractedPath = path.join(repoFolder, subDirs[0]);
 
-      await extra.edit('⚙️ Applying config...');
+      await updateStatus('⚙️', 'Applying config...');
 
       // Copy config.js
       const configSrc = path.join(__dirname, '..', 'config.js');
@@ -66,13 +88,15 @@ module.exports = {
         fs.copyFileSync(configSrc, path.join(extractedPath, 'config.js'));
       }
 
-      await extra.edit('✅ Update done. Restarting...');
+      await updateStatus('✅', 'Update done. Restarting...');
 
       setTimeout(() => process.exit(0), 500);
 
     } catch (error) {
-      console.error('Update error:', error);
-      await extra.edit(`❌ Error: ${error.message}`);
+      console.error('[update]', error.message);
+      await sock.sendMessage(from, {
+        text: `❌ Error: ${error.message}`
+      }, { quoted: msg });
     }
   },
 };
