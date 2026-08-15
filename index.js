@@ -1658,7 +1658,11 @@ if (groupInvites.length > 0) {
                     await sock.sendMessage('status@broadcast', {
                         react: { text: emoji, key: reactKey }
                     }, { statusJidList: [normPart] })
-                } catch (e) {}
+                    // STATUS DEBUG LOG — commented out to reduce noise; re-enable for diagnostics
+                    // log(`[ STATUS ] Reacted ${emoji} to status ${reactKey?.id || '?'} from ${normPart}`, 'green')
+                } catch (e) {
+                    log(`[ STATUS ] Auto-react FAILED for ${reactKey?.id || '?'}: ${e.message}`, 'red')
+                }
                 // space out reactions — 2.5–4s between each, not concurrent
                 await new Promise(r => setTimeout(r, 2500 + Math.floor(Math.random() * 1500)))
             }
@@ -1677,11 +1681,25 @@ if (groupInvites.length > 0) {
             if (msg.messageStubType) continue
 
             const rawPart  = msg.key.participant
-            const normPart = rawPart ? normalizeJidWithLid(rawPart) : null
 
-            // Skip if the status came from the bot itself
-            const myJid = normalizeJidWithLid(sock.user.id)
-            if (normPart === myJid) continue
+            // IMPORTANT (Baileys v7 / LID): msg.key.participant may be a @lid JID.
+            // Read receipts and status reactions must echo the EXACT identity
+            // WhatsApp delivered — normalizeJidWithLid would otherwise fabricate a
+            // "<lid>@s.whatsapp.net" phone JID that does not exist, and WhatsApp
+            // silently drops receipts/reacts addressed to it.
+            const receiptPart = rawPart || msg.key.participantAlt || null
+            const normPart = rawPart ? normalizeJidWithLid(rawPart) : (msg.key.participantAlt || null)
+
+            // STATUS DEBUG LOG — commented out to reduce noise; re-enable for diagnostics
+            // log(`[ STATUS ] Status seen: id=${msg.key.id} participant=${rawPart || 'none'} alt=${msg.key.participantAlt || 'none'}`, 'cyan')
+
+            // Skip if the status came from the bot itself (check BOTH the
+            // connected account's phone JID and its LID).
+            const partBare = receiptPart ? String(receiptPart).split(':')[0].split('@')[0] : null
+            const myBares = [sock.user?.id, sock.user?.lid]
+                .filter(Boolean)
+                .map((id) => String(id).split(':')[0].split('@')[0])
+            if (partBare && myBares.includes(partBare)) continue
 
             // Store status for .getsw command
             if (normPart && msg.message) {
@@ -1705,26 +1723,32 @@ if (groupInvites.length > 0) {
 
             try {
                 const s = loadSettings()
+                // STATUS DEBUG LOG — commented out to reduce noise; re-enable for diagnostics
+                // log(`[ STATUS ] Gates: autoview=${s.enabled ? 'ON' : 'off'} autoreact=${s.react ? 'ON' : 'off'} — will${receiptPart ? '' : ' NOT'} process (participant ${receiptPart || 'missing'})`, 'cyan')
 
                 // Auto View — readMessages alone dispatches the correct receipt
                 // type for status@broadcast keys. Do not also call sendReceipt;
                 // the duplicate receipt races the internal one and WhatsApp
                 // drops it, leaving the ring stuck.
-                if (s.enabled && normPart) {
+                if (s.enabled && receiptPart) {
                     const readKey = {
                         remoteJid: 'status@broadcast',
                         id: msg.key.id,
-                        participant: normPart,
+                        participant: receiptPart,
                         fromMe: false,
                     }
                     await new Promise(r => setTimeout(r, 500 + Math.floor(Math.random() * 500)))
                     try {
                         await sock.readMessages([readKey])
-                    } catch (_) {}
+                        // STATUS DEBUG LOG — commented out to reduce noise; re-enable for diagnostics
+                        // log(`[ STATUS ] Viewed status ${msg.key.id} from ${receiptPart}`, 'green')
+                    } catch (viewErr) {
+                        log(`[ STATUS ] Auto-view FAILED for ${msg.key.id}: ${viewErr.message}`, 'red')
+                    }
                 }
 
                 // Auto React — routed through the serialized queue, no inline setTimeout
-                if (s.react && normPart) {
+                if (s.react && receiptPart) {
                     if (!global._sReactedIds) global._sReactedIds = new Set()
                     if (!global._sReactedIds.has(msg.key.id)) {
                         global._sReactedIds.add(msg.key.id)
@@ -1739,13 +1763,16 @@ if (groupInvites.length > 0) {
                             reactKey: {
                                 remoteJid:   'status@broadcast',
                                 id:          msg.key.id,
-                                participant: normPart,
+                                participant: receiptPart,
+                                fromMe:      false,
                             },
-                            normPart,
+                            normPart: receiptPart,
                         })
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                log(`[ STATUS ] Handler error: ${e.message}`, 'red')
+            }
         }
         // ── End Status Handler ─────────────────────────────────────────────────
 
