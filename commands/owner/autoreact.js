@@ -17,14 +17,25 @@ function extractSingleEmoji(input) {
 }
 
 function formatStatus(settings) {
+  const activeReaction = settings.randomMode
+    ? [
+        'Reaction: *🎲 Random emojis*',
+        'To use a fixed emoji:',
+        '_.autoreact 🌪️_'
+      ]
+    : [
+        `Reaction: *${settings.fixedEmoji} Fixed emoji*`,
+        'To use random emojis:',
+        '_.autoreact random_'
+      ];
+
   return [
     '🤖 *AUTO-REACT STATUS*',
     '━━━━━━━━━━━━',
-    `Enabled: *${settings.enabled ? 'ON' : 'OFF'}*`,
+    `Status: *${settings.enabled ? 'ON' : 'OFF'}*`,
     `Source: *${settings.mode === 'bot' ? 'Bot commands only' : 'All messages'}*`,
-    `Target: *${settings.target.toUpperCase()}*`,
-    `Fixed emoji: ${settings.fixedEmoji}`,
-    `Random mode: *${settings.randomMode ? 'ON' : 'OFF'}*`,
+    `Target: *${settings.target === 'dms' ? 'DMs' : settings.target === 'groups' ? 'Groups' : 'Both'}*`,
+    ...activeReaction,
     '━━━━━━━━━━━━',
     '• .autoreact bot | all',
     '• .autoreact dms | groups | both',
@@ -66,16 +77,18 @@ module.exports = {
       }
 
       if (option === 'random') {
+        // Random and fixed reactions are mutually exclusive at runtime. The
+        // saved fixed emoji remains available as the fixed-mode fallback.
         save({ randomMode: true, enabled: true });
         return extra.reply('✅ Auto-React enabled with random emojis.');
       }
 
       const emoji = extractSingleEmoji(raw);
       if (emoji) {
-        // Emoji configuration deliberately preserves enabled, source, target,
-        // and random-mode values.
-        save({ fixedEmoji: emoji });
-        return extra.reply(`✅ Fixed Auto-React emoji set to ${emoji}.`);
+        // Selecting a fixed emoji intentionally exits random mode, while
+        // preserving enabled/source/target configuration.
+        save({ fixedEmoji: emoji, randomMode: false });
+        return extra.reply(`✅ Fixed Auto-React emoji set to ${emoji}. Random mode turned OFF.`);
       }
 
       return extra.reply(
