@@ -10,7 +10,7 @@ module.exports = {
     newsletterJid: '',
     JUNE_API_URL: 'https://june-ultra-ai-test-model.onrender.com',
     JUNE_BOT_ID:  'june-ultra-main',
-    updateZipUrl: 'https://github.com/Vinpink2/June-X-Ultra/archive/refs/heads/main.zip',
+    updateZipUrl: 'https://github.com/supreme-Lord2/xjx/archive/refs/heads/main.zip',
     
     packname: '',
     telegramToken: '8316875590:AAGXXYbt2OIn_hORS0s9RlW5n3e5W5-0YPQ',
