@@ -649,36 +649,6 @@ const handleMessage = async (sock, msg) => {
       return; // Silently ignore system messages
     }
 
-    // Auto-React System — uses short-lived cache to avoid disk read every message
-    try {
-      const arSettings = getCachedArSettings();
-      if (arSettings.enabled && msg.message && !msg.key.fromMe) {
-        const content = msg.message.ephemeralMessage?.message || msg.message;
-        const text =
-          content.conversation ||
-          content.extendedTextMessage?.text ||
-          '';
-
-        const jid  = msg.key.remoteJid;
-        const mode = arSettings.mode || 'bot';
-        const emojis = ['❤️','🔥','👌','💀','😁','✨','👍','🤨','😎','😂','🤝','💫','🌍'];
-
-        if (mode === 'bot') {
-          const prefixList = ['.', '/', '#'];
-          if (prefixList.includes(text?.trim()[0])) {
-            await sock.sendMessage(jid, { react: { text: '🌪️', key: msg.key } });
-          }
-        }
-
-        if (mode === 'all') {
-          const rand = emojis[Math.floor(Math.random() * emojis.length)];
-          await sock.sendMessage(jid, { react: { text: rand, key: msg.key } });
-        }
-      }
-    } catch (e) {
-      console.error('[AutoReact Error]', e.message);
-    }
-
     // Unwrap containers first
     const content = getMessageContent(msg);
     // Note: We don't return early if content is null because forwarded status messages might not have content
@@ -1195,6 +1165,37 @@ const handleMessage = async (sock, msg) => {
         args = stripped.trim().split(/\s+/);
         commandName = (args.shift() || '').toLowerCase();
         command = commands.get(commandName);
+    }
+
+    // Auto-React runs after command resolution so "bot" mode reacts only to
+    // a real, registered command using the configured prefix—not merely any
+    // message that starts with punctuation. It remains before command
+    // permissions/dispatch by design, so valid command attempts can be
+    // acknowledged even when their command later denies access.
+    try {
+      const arSettings = getCachedArSettings();
+      const sourceMatches = arSettings.mode === 'all' ||
+        (arSettings.mode === 'bot' && Boolean(command));
+      const { canTargetChat } = require('./utils/autoReact');
+
+      if (
+        arSettings.enabled &&
+        !msg.key.fromMe &&
+        sourceMatches &&
+        canTargetChat(arSettings.target, isGroup)
+      ) {
+        const { reactions } = require('./utils/emojis');
+        const emoji = arSettings.randomMode && Array.isArray(reactions) && reactions.length
+          ? reactions[Math.floor(Math.random() * reactions.length)]
+          : arSettings.fixedEmoji;
+
+        if (emoji) {
+          await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
+        }
+      }
+    } catch (e) {
+      // A reaction failure must never block normal command/message handling.
+      console.error('[AutoReact Error]', e.message);
     }
 
     // No command matched — either no prefix was used, or (in empty-prefix mode)
