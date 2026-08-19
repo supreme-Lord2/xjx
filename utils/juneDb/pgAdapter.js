@@ -45,7 +45,19 @@ let lastError = null;
 let schemaReady = false;
 
 function hasUrl() {
-  return Boolean(String(process.env.DATABASE_URL || '').trim());
+  return Boolean(getUrl());
+}
+
+// Heroku provisions DATABASE_URL, while the project documentation and local
+// .env template use POSTGRESQL_URL. Accept both so remote persistence is not
+// accidentally disabled after a dyno restart.
+function getUrl() {
+  return String(
+    process.env.DATABASE_URL ||
+    process.env.POSTGRESQL_URL ||
+    process.env.POSTGRES_URL ||
+    ''
+  ).trim();
 }
 
 function getBotId() {
@@ -90,12 +102,13 @@ async function init() {
       return getStatus();
     }
 
+    const connectionString = getUrl();
     const nextPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       max: Number(process.env.JUNE_PG_POOL_MAX) || 5,
       idleTimeoutMillis: Number(process.env.JUNE_PG_IDLE_TIMEOUT_MS) || 30000,
       connectionTimeoutMillis: Number(process.env.JUNE_PG_CONNECTION_TIMEOUT_MS) || 5000,
-      ssl: /sslmode=require/i.test(process.env.DATABASE_URL)
+      ssl: /sslmode=require/i.test(connectionString)
         ? { rejectUnauthorized: false }
         : undefined,
     });

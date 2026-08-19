@@ -35,7 +35,12 @@ let activeBotId = normalizeBotId(
 );
 
 function getUri() {
-  return String(process.env.MONGODB_URI || process.env.MONGO_URL || '').trim();
+  return String(
+    process.env.MONGODB_URI ||
+    process.env.MONGODB_URL ||
+    process.env.MONGO_URL ||
+    ''
+  ).trim();
 }
 
 function hasUri() {
