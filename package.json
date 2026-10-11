@@ -59,7 +59,6 @@
         "sharp": "^0.34.5",
         "sql.js": "^1.10.2",
         "webp-converter": "^2.3.3",
-        "wolfsocket": "^1.0.1",
         "yt-search": "^2.13.1"
     },
     "devDependencies": {
