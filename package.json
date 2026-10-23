@@ -43,6 +43,7 @@
         "js-confuser": "^1.7.3",
         "javascript-obfuscator": "^4.1.1",
         "lolcatjs": "^2.4.3",
+        "link-preview-js": "^3.0.0",
         "mammoth": "^1.12.0",
         "moment-timezone": "^0.5.48",
         "mongodb": "^6.21.0",
