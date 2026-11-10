@@ -1,0 +1,13 @@
+{
+  "name": "junex-ci-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build-only manifest for the .github/workflows/build.yml obfuscation job. The bot itself has no root package.json: dependencies are installed by the public loader image (Vinpink2/June-Ultra), never by this repo.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}
