@@ -2,12 +2,13 @@
   "name": "junex-ci-build",
   "version": "3.0.6",
   "private": true,
-  "description": "Build-only manifest for the .github/workflows/build.yml obfuscation job. The bot itself has no root package.json: dependencies are installed by the public loader image (Vinpink2/June-Ultra), never by this repo.",
+  "description": "Build-only manifest for the .github/workflows/build.yml obfuscation job. Runtime dependencies are installed by the public loader image (Vinpink2/June-Ultra); this repository records the JunexBaileys runtime alias here.",
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "npm:junexbaileys@1.1.1",
     "javascript-obfuscator": "^4.1.1"
   }
 }
