@@ -1,6 +1,6 @@
 {
   "name": "junex-ci-build",
-  "version": "3.0.6",
+  "version": "3.0.8",
   "private": true,
   "description": "Build-only manifest for the .github/workflows/build.yml obfuscation job. Runtime dependencies are installed by the public loader image (Vinpink2/June-Ultra); this repository records the JunexBaileys runtime alias here.",
   "license": "MIT",
